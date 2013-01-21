@@ -35,46 +35,35 @@
 # Disallow undefined variables
 set -u
  
+
+default_ndk="/Users/bquenin/android-ndk-r8d"
+default_toolchain="/Users/bquenin/android-toolchain"
  
-default_iphoneos_version=6.0
-default_macos_version=10.6
-developer_dir="/Applications/Xcode.app/Contents/Developer"
- 
-export IPHONEOS_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-$default_iphoneos_version}"
-export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-$default_macos_version}"
- 
-export DEVELOPER_DIR="${DEVELOPER_DIR:-$developer_dir}"
- 
+export NDK_DIR="${NDK_DIR:-$default_ndk}"
+export TOOLCHAIN_DIR="${TOOLCHAIN_DIR:-$default_toolchain}"
+
 usage ()
 {
     cat >&2 << EOF
 Usage: ${0##*/} [-ht] [-p prefix] target [configure_args]
        -h	Print help message
        -p	Installation prefix (default: \$HOME/Developer/Platforms/...)
-       -t	Use 16-bit Thumb instruction set (instead of 32-bit ARM)
-       -g 	Use gcc/g++ compilers (default: clang/clang++)
- 
-The target must be "device", "device7" (for armv7 architecture only) or "simulator".  
+
+The target must be "arm".
 Any additional arguments are passed to configure.
  
 The following environment variables affect the build process:
  
- IPHONEOS_DEPLOYMENT_TARGET	(default: $default_iphoneos_version)
- MACOSX_DEPLOYMENT_TARGET	(default: $default_macos_version)
- DEVELOPER_DIR           	(default: $developer_dir)
+ NDK_DIR                    (default: $default_ndk)
+ TOOLCHAIN_DIR              (default: $default_toolchain)
  
 EOF
 }
- 
-cc=clang
-cxx=clang++
  
 while getopts ":hp:t" opt; do
     case $opt in
     h  ) usage ; exit 0 ;;
     p  ) prefix="$OPTARG" ;;
-    t  ) thumb_opt=thumb ;;
-    g  ) cc=gcc ; cxx=g++ ;;
     \? ) usage ; exit 2 ;;
     esac
 done
@@ -90,24 +79,11 @@ shift
  
 case $target in
  
-    device )
-    arch=armv6
-    platform=iPhoneOS
-    extra_cflags="-m${thumb_opt:-no-thumb} -mthumb-interwork"
+    arm )
+    arch=arm-eabi
+    extra_cflags=""
     ;;
     
-    device7 )
-    arch=armv7
-    platform=iPhoneOS
-    extra_cflags="-m${thumb_opt:-no-thumb} -mthumb-interwork"
-    ;;
-    
-    simulator )
-    arch=i386
-    platform=iPhoneSimulator
-    extra_cflags="-D__IPHONE_OS_VERSION_MIN_REQUIRED=${IPHONEOS_DEPLOYMENT_TARGET%%.*}0000"
-    ;;
- 
     * )
     usage
     exit 2
@@ -115,23 +91,37 @@ case $target in
 esac
  
  
-platform_dir="$DEVELOPER_DIR/Platforms/${platform}.platform/Developer"
-platform_bin_dir="${platform_dir}/usr/bin"
-platform_sdk_dir="${platform_dir}/SDKs/${platform}${IPHONEOS_DEPLOYMENT_TARGET}.sdk"
-prefix="${prefix:-${HOME}${platform_sdk_dir}}"
- 
-export CC="$DEVELOPER_DIR/Toolchains/XcodeDefault.xctoolchain/usr/bin/${cc}"
-export CFLAGS="-arch ${arch} -pipe -Os -gdwarf-2 -isysroot ${platform_sdk_dir} ${extra_cflags}"
-export LDFLAGS="-arch ${arch} -isysroot ${platform_sdk_dir}"
-export CXX="$DEVELOPER_DIR/Toolchains/XcodeDefault.xctoolchain/usr/bin//${cxx}"
-export CXXFLAGS="${CFLAGS}"
+platform_dir="$TOOLCHAIN_DIR"
+platform_bin_dir="${platform_dir}/bin"
+
+#
+# Define Tools
+#
+CC=arm-linux-androideabi-gcc
+CXX=arm-linux-androideabi-g++
+LINK=${CXX}
+STRIP=arm-linux-androideabi-strip
+LIB="arm-linux-androideabi-ar -cr"
+RANLIB=arm-linux-androideabi-ranlib
+
+export CC="${platform_bin_dir}/${CC}"
+export CXX="${platform_bin_dir}/${CXX}"
 export CPP="${CC} -E"
 export CXXCPP="${CPP}"
- 
- 
+export LINK="${CXX}"
+export STRIP="${platform_bin_dir}/arm-linux-androideabi-strip"
+export LIB="${platform_bin_dir}/arm-linux-androideabi-ar -cr"
+export RANLIB="${platform_bin_dir}/arm-linux-androideabi-ranlib"
+
+#
+# Compiler and Linker Flags
+#
+export CFLAGS="-isysroot ${platform_dir}/sysroot ${extra_cflags}"
+export CXXFLAGS="-isysroot ${platform_dir}/sysroot ${extra_cflags}"
+export LDFLAGS="-isysroot ${platform_dir}/sysroot"
+
 ./configure \
-    --prefix="${prefix}" \
-    --host="${arch}-apple-darwin" \
+    --host="${arch}" \
     --disable-shared \
     --enable-static \
     "$@" || exit
